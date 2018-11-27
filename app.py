@@ -22,8 +22,10 @@ from pandas.api.types import is_numeric_dtype
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+server = app.server
 app.config['suppress_callback_exceptions']=True
-app.scripts.config.serve_locally = True
+#app.scripts.config.serve_locally = True
+
 
 app.layout = html.Div([
     html.H1("explora.me", style={'textAlign': 'center', 'font-family': 'Courier New'}),
