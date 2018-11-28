@@ -27,6 +27,7 @@ app.config['suppress_callback_exceptions']=True
 #app.scripts.config.serve_locally = True
 
 
+
 app.layout = html.Div([
     html.H1("explora.me", style={'textAlign': 'center', 'font-family': 'Courier New'}),
     dcc.Upload(
@@ -151,16 +152,18 @@ def update_output_div(var1, var2, rows, columns):
         return [print_chi2(df, var1, var2), draw_categorical(df, var1, var2)]
 
     elif is_numeric_dtype(df[var2]):
-        return [print_numeric(df, var1, var2), draw_numeric(df, var1, var2)]
+        return [print_summary(df, var1, var2), print_numeric(df, var1, var2), draw_numeric(df, var1, var2)]
 
 from scipy.stats import f_oneway, ttest_ind, mannwhitneyu, kruskal, chisquare, fisher_exact, chi2_contingency
 from statsmodels.stats.diagnostic import kstest_normal
 
 
 def print_chi2(df, group_variable, variable):
+    if len(df[variable].dropna().unique())==1:
+        df[variable] = df[variable].fillna(0)
     ct = pd.crosstab(df[variable], df[group_variable])
     chi2, p, dof, expected_freq = chi2_contingency(ct)
-    ct.insert(0, 'Level/Group', pd.Series(df[variable].dropna().unique(), index=ct.index))
+    ct.insert(0, '{}/{}'.format(variable, group_variable), pd.Series(df[variable].dropna().unique(), index=ct.index))
     ct_table = dash_table.DataTable(
         id='ct_table',
         columns=[{"name": i, "id": i} for i in ct.columns],
@@ -179,6 +182,17 @@ def print_numeric(df, group_variable, variable):
         else:
             return print_mannwhitney(df, group_variable, variable)
 
+def print_summary(df, group_variable, variable):
+    group_names = df[group_variable].unique()
+    summ_tb = pd.concat([df[df[group_variable]==group][variable].describe() for group in group_names], axis=1, keys=group_names)
+    summ_tb.insert(0, 'Statistics for {}'.format(variable), summ_tb.index   )
+    summ_table = dash_table.DataTable(
+        id='summ_table',
+        columns=[{'name': i, 'id': i} for i in summ_tb.columns],
+        data=summ_tb.to_dict('rows')
+        )
+    return html.Div(summ_table)
+
 def check_normality(df, variable, alpha=0.05):
     ##use only KS or Anderson Starling also?
     ks, p = kstest_normal(df[variable])
@@ -186,49 +200,59 @@ def check_normality(df, variable, alpha=0.05):
         return True
     return False
 
+
+def get_groups(df, group_variable, variable):
+    return [df[df[group_variable]==group][variable].dropna() for group in df[group_variable].unique()]
+
 def print_ttest(df, group_variable, variable):
-    groups = [df[df[group_variable]==group][variable] for group in df[group_variable].unique()]
+    groups = get_groups(df, group_variable, variable)
     t, p = ttest_ind(*groups, nan_policy="omit")
     p = "<0.0001" if p<0.0001 else round(p, 4)
-    return html.Div("The t is {}, with a p of {}.".format(t, p))
+    return html.Div("{} is normally distributed according to Kolmogorov-Smirnov test. The t statistic for comparing means is {}, with a p of {}.".format(variable, t, p))
 
 def print_anova(df, group_variable, variable):
-    groups = [df[df[group_variable]==group][variable].dropna() for group in df[group_variable].unique()]
+    groups = get_groups(df, group_variable, variable)
     F, p = f_oneway(*groups)
     p = "<0.0001" if p<0.0001 else round(p, 4)
-    return html.Div("The F is {}, with a p of {}.".format(F, p))
+    return html.Div("{} is normally distributed according to Kolmogorov-Smirnov test. The ANOVA (F statistic) for comparing means is {}, with a p of {}.".format(variable, F, p))
 
 def print_mannwhitney(df, group_variable, variable):
-    groups = [df[df[group_variable]==group][variable].dropna() for group in df[group_variable].unique()]
+    groups = get_groups(df, group_variable, variable)
     u, p = mannwhitneyu(*groups)
     p = "<0.0001" if p<0.0001 else round(p, 4)
-    return html.Div("The u is {}, with a p of {}.".format(u, p))    
+    return html.Div("{} is not normally distributed according to Kolmogorov-Smirnov test. The u (Mann-Whitney) statistic for comparing distributions is {}, with a p of {}.".format(variable, u, p))    
 
 def print_kruskal(df, group_variable, variable):
-    groups = [df[df[group_variable]==group][variable].dropna() for group in df[group_variable].unique()]
+    groups = get_groups(df, group_variable, variable)
     H, p = kruskal(*groups)
     p = "<0.0001" if p<0.0001 else round(p, 4)
-    return html.Div("The H is {}, with a p of {}.".format(H, p))    
+    return html.Div("{} is not normally distributed according to Kolmogorov-Smirnov test. The H (Kruskal-Wallis) statistic for comparing distributions is {}, with a p of {}.".format(variable, H, p))    
 
-def draw_categorical(df, group_variable, variable):
-    data = [go.Bar(
-        x=df[df[variable]==i][group_variable].value_counts().keys(),
-        y=df[df[variable]==i][group_variable].value_counts().values,
-        name=str(i)) for i in df[variable].unique()]
+def draw_categorical(df, group_variable, variable, percent=True):
+    if percent:
+        categories = df[group_variable].unique()
+        data = [go.Bar(
+            x = categories,
+            y=df[df[variable]==i][group_variable].value_counts()[categories]/df[group_variable].value_counts()[categories]*100,
+            name=str(i)) for i in df[variable].unique()]
+    else:
+        data = [go.Bar(
+                    x=df[df[variable]==i][group_variable].value_counts().keys(),
+                    y=df[df[variable]==i][group_variable].value_counts().values,
+                    name=str(i)) for i in df[variable].unique()]
     graph = dcc.Graph(
         id="plot",
         figure={
         'data': data,
         'layout': go.Layout(    
                 xaxis={'title': group_variable},
-                yaxis={'title': "Count"},
+                yaxis={'title': "Percent" if percent else "Count"},
                 margin={'l': 100, 'b': 40, 't': 10, 'r': 10},
                 legend={'x': 1, 'y': 1},
                 hovermode=  'closest'
                 )}
         )
     return graph
-
 
 def draw_numeric(df, group_variable, variable):
     traces = [go.Histogram(x=df[df[group_variable]==i][variable], name=str(i)) for i in df[group_variable].unique()]
