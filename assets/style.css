@@ -1,0 +1,13 @@
+body {
+	font-family: "Lucida Console", Monaco, monospace;
+	color: rgba(255,255,255, 0.9);
+	background: linear-gradient(135deg, rgba(145,164,181,1) 0%, rgba(144,163,180,1) 1%, rgba(129,151,171,1) 12%, rgba(15,56,99,1) 98%, rgba(12,54,97,1) 100%);
+}
+
+.logo {
+	font-family: "Lucida Console", Monaco, monospace;
+}
+
+.dropdown {
+	color: rgba(0,0,0, 0.9);
+}

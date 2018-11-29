@@ -19,17 +19,15 @@ from pandas.api.types import is_string_dtype
 from pandas.api.types import is_numeric_dtype
 
 
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'style/styles.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 app.config['suppress_callback_exceptions']=True
 #app.scripts.config.serve_locally = True
 
-
-
 app.layout = html.Div([
-    html.H1("explora.me", style={'textAlign': 'center', 'font-family': 'Courier New'}),
+    html.H1("explora.me", style={'textAlign': 'center'}, className="logo"),
     dcc.Upload(
         id='upload-data',
         children=html.Div([
@@ -74,13 +72,15 @@ def parse_contents(contents, filename, date):
     dropdown1 = dcc.Dropdown(
     options=[{'label': col, 'value': col} for col in df.columns if check_categorical(df, col)],
     id='dropdown1',
-    placeholder='Select a variable defining the groups'
+    placeholder='Select a variable defining the groups',
+    className="dropdown"
     )    
 
     dropdown2 = dcc.Dropdown(
     options=[{'label': col, 'value': col} for col in df.columns],
     id='dropdown2',
-    placeholder='Select a variable to evaluate'
+    placeholder='Select a variable to evaluate',
+    className="dropdown"
     )   
 
     df_table = dash_table.DataTable(
@@ -92,6 +92,7 @@ def parse_contents(contents, filename, date):
         'whiteSpace': 'no-wrap',
         'overflow': 'hidden',
         'textOverflow': 'ellipsis',
+        'color': 'black'
         },
         style_table={
         'maxHeight': '300',
@@ -105,8 +106,8 @@ def parse_contents(contents, filename, date):
         )
 
     return html.Div([
-        html.H5(filename),
-        html.H6(datetime.datetime.fromtimestamp(date)),
+        html.H5(filename[:filename.find(".")], style={'textAlign': 'center'}),
+#        html.H6(datetime.datetime.fromtimestamp(date)),
 
         # Use the DataTable prototype component:
         # github.com/plotly/datatable-experiments
@@ -116,6 +117,8 @@ def parse_contents(contents, filename, date):
 
         dropdown1,
         dropdown2,
+
+        html.Hr(),
 
         html.Div(id='responder'),
 
@@ -146,7 +149,8 @@ def update_output(list_of_contents, list_of_names, list_of_dates):
 )
 def update_output_div(var1, var2, rows, columns):
     df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
-
+    if not var1 or not var2:
+        return
     if check_categorical(df, var2):
         ##Check for expected frequency to use Fisher!!
         return [print_chi2(df, var1, var2), draw_categorical(df, var1, var2)]
@@ -167,7 +171,23 @@ def print_chi2(df, group_variable, variable):
     ct_table = dash_table.DataTable(
         id='ct_table',
         columns=[{"name": i, "id": i} for i in ct.columns],
-        data=ct.to_dict("rows"))
+        data=ct.to_dict("rows"),
+        style_cell={
+        # all three widths are needed
+        'whiteSpace': 'no-wrap',
+        'overflow': 'hidden',
+        'textOverflow': 'ellipsis',
+        'color': 'black'
+        },
+        style_table={
+        'maxHeight': '300',
+        'overflowY': 'scroll'
+        },
+        css=[{
+        'selector': '.dash-cell div.dash-cell-value',
+        'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
+        }],
+        )
     return html.Div([ct_table, html.Div("The chi2 is {}, with a p of {}.".format(chi2, p))])
 
 def print_numeric(df, group_variable, variable):
@@ -189,7 +209,22 @@ def print_summary(df, group_variable, variable):
     summ_table = dash_table.DataTable(
         id='summ_table',
         columns=[{'name': i, 'id': i} for i in summ_tb.columns],
-        data=summ_tb.to_dict('rows')
+        data=summ_tb.to_dict('rows'),
+        style_cell={
+        # all three widths are needed
+        'whiteSpace': 'no-wrap',
+        'overflow': 'hidden',
+        'textOverflow': 'ellipsis',
+        'color': 'black'
+        },
+        style_table={
+        'maxHeight': '300',
+        'overflowY': 'scroll'
+        },
+        css=[{
+        'selector': '.dash-cell div.dash-cell-value',
+        'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
+        }],
         )
     return html.Div(summ_table)
 
