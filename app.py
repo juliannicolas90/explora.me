@@ -13,6 +13,7 @@ import plotly.plotly as py
 from plotly import tools
 import plotly.graph_objs as go
 
+import numpy as np
 import pandas as pd
 
 from pandas.api.types import is_string_dtype
@@ -24,6 +25,7 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'style/sty
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 app.config['suppress_callback_exceptions']=True
+app.title = "explora.me"
 #app.scripts.config.serve_locally = True
 
 app.layout = html.Div([
@@ -47,6 +49,7 @@ app.layout = html.Div([
         multiple=True
     ),
     html.Div(id='output-data-upload'),
+    html.Div(id='analyze_table')
 ])
 
 
@@ -68,25 +71,11 @@ def parse_contents(contents, filename, date):
             'There was an error processing this file.'
         ])
 
-
-    dropdown1 = dcc.Dropdown(
-    options=[{'label': col, 'value': col} for col in df.columns if check_categorical(df, col)],
-    id='dropdown1',
-    placeholder='Select a variable defining the groups',
-    className="dropdown"
-    )    
-
-    dropdown2 = dcc.Dropdown(
-    options=[{'label': col, 'value': col} for col in df.columns],
-    id='dropdown2',
-    placeholder='Select a variable to evaluate',
-    className="dropdown"
-    )   
-
     df_table = dash_table.DataTable(
         id='dataframe',
-        columns=[{"name": i, "id": i} for i in df.columns],
+        columns=[{"name": i, "id": i,'deletable': True,'editable_name': True} for i in df.columns],
         data=df.to_dict("rows"),
+        row_deletable=True,
         style_cell={
         # all three widths are needed
         'whiteSpace': 'no-wrap',
@@ -113,14 +102,7 @@ def parse_contents(contents, filename, date):
         # github.com/plotly/datatable-experiments
         df_table,
 
-        html.Hr(),  # horizontal line
 
-        dropdown1,
-        dropdown2,
-
-        html.Hr(),
-
-        html.Div(id='responder'),
 
         # For debugging, display the raw contents provided by the web browser
  #       html.Div('Raw Content'),
@@ -129,6 +111,35 @@ def parse_contents(contents, filename, date):
  #           'wordBreak': 'break-all'
  #       })
     ])
+
+
+
+@app.callback(Output(component_id='analyze_table', component_property='children'),
+            [Input('dataframe', 'data'), Input('dataframe', 'columns')])
+def analyze_table(rows, columns):
+    df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
+    dropdown1 = dcc.Dropdown(
+    options=[{'label': col, 'value': col} for col in df.columns if check_categorical(df, col)],
+    id='dropdown1',
+    placeholder='Select a variable defining the groups',
+    className="dropdown"
+    )    
+    dropdown2 = dcc.Dropdown(
+    options=[{'label': col, 'value': col} for col in df.columns],
+    id='dropdown2',
+    placeholder='Select a variable to evaluate',
+    className="dropdown"
+    )   
+    return [
+        html.Hr(),  # horizontal line
+
+        dropdown1,
+        dropdown2,
+
+        html.Hr(),
+
+        html.Div(id='responder'),
+        ]
 
 
 @app.callback(Output('output-data-upload', 'children'),
@@ -289,26 +300,46 @@ def draw_categorical(df, group_variable, variable, percent=True):
         )
     return graph
 
-def draw_numeric(df, group_variable, variable):
-    traces = [go.Histogram(x=df[df[group_variable]==i][variable], name=str(i)) for i in df[group_variable].unique()]
-    fig = tools.make_subplots(cols=len(traces))
+def create_graph(traces, id, xtitle="", ytitle=""):
+    fig = tools.make_subplots()
     for i in range(len(traces)):
-        fig.append_trace(traces[i], 1, i+1)
+        fig.append_trace(traces[i], 1, 1)
 
     graph = dcc.Graph(
-        id="plot",
+        id=id,
         figure={
         'data': fig,
         'layout': go.Layout(    
-                xaxis={'title': variable},
+                xaxis={'title': xtitle},
                 yaxis={'title': "Count"},
                 margin={'l': 100, 'b': 40, 't': 10, 'r': 10},
                 legend={'x': 1, 'y': 1},
                 hovermode=  'closest'
                 )            
-        }
-        )
+        },
+        )    
     return graph
+
+def draw_numeric(df, group_variable, variable):
+    return html.Div([draw_histograms(df, group_variable, variable), draw_boxplots(df, group_variable, variable)],className='graph_container')
+
+def draw_histograms(df, group_variable, variable):
+    groups = df[group_variable].unique()
+    traces = [go.Histogram(x=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i)) for i in groups]
+    return html.Div(create_graph(traces, "histogram", xtitle=variable), className="six columns")
+
+def draw_boxplots(df, group_variable, variable):
+    groups = df[group_variable].unique()
+    traces = [go.Box(y=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i)) for i in groups]
+    return html.Div(create_graph(traces, "boxplot", xtitle=variable), className="six columns")
+
+
+# def draw_numeric(df, group_variable, variable):
+#     groups = df[group_variable].unique()
+#     colors = assign_colors(groups)
+#     traces1 = [go.Histogram(x=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i), marker={'color': colors[str(i)]}) for i in groups]
+#     traces2 = [go.Box(y=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i), marker={'color': colors[str(i)]}) for i in groups]
+#     traces = traces1+traces2
 
 def check_categorical(dataset, col):
     if ((len(dataset[col].value_counts())<=2 or is_string_dtype(dataset[col])) and dataset[col].value_counts().iloc[0]!=len(dataset)):
