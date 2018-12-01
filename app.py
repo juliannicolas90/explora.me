@@ -49,7 +49,10 @@ app.layout = html.Div([
         multiple=True
     ),
     html.Div(id='output-data-upload'),
-    html.Div(id='analyze_table')
+    html.Div([
+        html.Div(id='analyze_table', className="six columns", style={'padding': '5px'}),
+        html.Div(id='analyze_table_multiple', className="six columns", style={'padding': '5px'}),
+    ])
 ])
 
 
@@ -70,7 +73,6 @@ def parse_contents(contents, filename, date):
         return html.Div([
             'There was an error processing this file.'
         ])
-
     df_table = dash_table.DataTable(
         id='dataframe',
         columns=[{"name": i, "id": i,'deletable': True,'editable_name': True} for i in df.columns],
@@ -78,38 +80,20 @@ def parse_contents(contents, filename, date):
         row_deletable=True,
         style_cell={
         # all three widths are needed
-        'whiteSpace': 'no-wrap',
-        'overflow': 'hidden',
-        'textOverflow': 'ellipsis',
-        'color': 'black'
+        'color': 'black',
+        'minWidth': '200px',
         },
         style_table={
         'maxHeight': '300',
         'overflowY': 'scroll'
         },
         editable=True,
-        css=[{
-        'selector': '.dash-cell div.dash-cell-value',
-        'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
-        }],
+        n_fixed_rows=1 
         )
 
     return html.Div([
         html.H5(filename[:filename.find(".")], style={'textAlign': 'center'}),
-#        html.H6(datetime.datetime.fromtimestamp(date)),
-
-        # Use the DataTable prototype component:
-        # github.com/plotly/datatable-experiments
         df_table,
-
-
-
-        # For debugging, display the raw contents provided by the web browser
- #       html.Div('Raw Content'),
- #       html.Pre(contents[0:200] + '...', style={
- #           'whiteSpace': 'pre-wrap',
- #           'wordBreak': 'break-all'
- #       })
     ])
 
 
@@ -133,12 +117,45 @@ def analyze_table(rows, columns):
     return [
         html.Hr(),  # horizontal line
 
+        html.H4("Single Variable Analysis", style=dict(textAlign="center")),
+        html.H6("Choose a Group Variable:", style=dict(textAlign="center")),
         dropdown1,
+        html.H6("Choose a Analysis Variable:", style=dict(textAlign="center")),
         dropdown2,
 
         html.Hr(),
 
         html.Div(id='responder'),
+        ]
+
+@app.callback(Output(component_id='analyze_table_multiple', component_property='children'),
+            [Input('dataframe', 'data'), Input('dataframe', 'columns')])
+def analyze_table_multiple(rows, columns):
+    df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
+    dropdown1 = dcc.Dropdown(
+    options=[{'label': col, 'value': col} for col in df.columns if check_categorical(df, col)],
+    id='dropdown1_multiple',
+    placeholder='Select a variable defining the groups',
+    className="dropdown"
+    )    
+    dropdown2 = dcc.Dropdown(
+    options=[{'label': col, 'value': col} for col in df.columns],
+    multi=True,
+    id='dropdown2_multiple',
+    placeholder='Select a variable to evaluate',
+    className="dropdown"
+    )   
+    return [
+        html.Hr(),  # horizontal line
+        html.H4("Multiple Variable Analysis", style=dict(textAlign="center")),
+        html.H6("Choose a Group Variable:", style=dict(textAlign="center")),
+        dropdown1,
+        html.H6("Choose a Analysis Variable:", style=dict(textAlign="center")),
+        dropdown2,
+
+        html.Hr(),
+
+        html.Div(id='responder_multiple'),
         ]
 
 
@@ -158,7 +175,7 @@ def update_output(list_of_contents, list_of_names, list_of_dates):
     Output(component_id='responder', component_property='children'),
     [Input(component_id='dropdown1', component_property='value'), Input(component_id='dropdown2', component_property='value'), Input('dataframe', 'data'), Input('dataframe', 'columns')]
 )
-def update_output_div(var1, var2, rows, columns):
+def compare_single_variable(var1, var2, rows, columns):
     df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
     if not var1 or not var2:
         return
@@ -169,9 +186,109 @@ def update_output_div(var1, var2, rows, columns):
     elif is_numeric_dtype(df[var2]):
         return [print_summary(df, var1, var2), print_numeric(df, var1, var2), draw_numeric(df, var1, var2)]
 
+
+@app.callback(
+    Output(component_id='responder_multiple', component_property='children'),
+    [Input(component_id='dropdown1_multiple', component_property='value'), Input(component_id='dropdown2_multiple', component_property='value'), Input('dataframe', 'data'), Input('dataframe', 'columns')]
+)
+def compare_multiple_variables(var1, vars, rows, columns):
+    df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
+    if not var1 or not vars:
+        return
+    group_names = df[var1].unique()
+    columns = ['Variable'] + list(group_names) + ['p value']
+    rows = []
+    for var in vars:
+        if check_categorical(df, var):
+            ##Calculate percent of each category
+            ##Calculate Chi2
+            var_rows = []
+            row_1 = {group_name: "" for group_name in group_names}
+            row_1['Variable'] = var
+            p = calculate_chi2(df, var1, var)
+            row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
+            var_rows.append(row_1)
+            categories = df[var].unique()
+            groups = get_groups(df, var1, var, dropna=False)
+            for cat in categories:
+                row = {'Variable': " "+str(cat)}
+                for i in range(len(groups)):
+                    cnt = groups[i].value_counts()[cat] if cat in groups[i].unique() else 0
+                    percent = round(cnt/len(groups[i])*100,1)
+                    row[group_names[i]] = "{} ({}%)".format(cnt, percent)
+                    row['p value'] = ""
+                var_rows.append(row)
+            rows += var_rows
+        elif is_numeric_dtype(df[var]):
+            groups = get_groups(df, var1, var, dropna=True)
+            ##Calculate means + std and median + IQR
+            ##Calculate t-test, MW, ANOVA o Kruskel
+            var_rows = []
+            row_1 = {group_name: "" for group_name in group_names}
+            row_1['Variable'] = var
+            p = get_p_numerical(df, var1, var)
+            row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
+            row_mean = {group_names[i]: "{} +- {}".format(round(groups[i].mean(),2), round(groups[i].std(),2)) for i in range(len(groups))}
+            row_mean['Variable'] = "Mean +- Std"
+            row_mean['p value'] = ""
+            row_median = {group_names[i]: "{} ({}-{})".format(round(groups[i].median(),2), groups[i].quantile(0.25), groups[i].quantile(0.75)) for i in range(len(groups))}
+            row_median['Variable'] = "Median (IQR)"
+            row_median['p value'] = ""
+            var_rows.append(row_1)
+            var_rows.append(row_mean)
+            var_rows.append(row_median)
+            rows += var_rows
+    ##Create DataTable
+    multiple_table = create_datatable(rows, columns, id="multiple_table")
+    return html.Div(multiple_table)
+
+
+def get_p_numerical(df, var1, var):
+    groups = get_groups(df,var1, var)
+    if len(df[var1].unique()) > 2:
+        if check_normality(df, var):
+            _, p = f_oneway(*groups)
+        else:
+            _, p = kruskal(*groups)
+    else:
+        if check_normality(df, var):
+            _, p = ttest_ind(*groups)
+        else:
+            _, p =  mannwhitneyu(*groups)
+    return p 
+
+def create_datatable(rows, columns, id):
+    multiple_table = dash_table.DataTable(
+        id=id,
+        columns=[{'name': i, 'id': i} for i in columns],
+        data=rows,
+        style_cell={
+        # all three widths are needed
+        'whiteSpace': 'no-wrap',
+        'overflow': 'hidden',
+        'textOverflow': 'ellipsis',
+        'color': 'black'
+        },
+        style_table={
+        'overflowY': 'scroll'
+        },
+        css=[{
+        'selector': '.dash-cell div.dash-cell-value',
+        'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
+        }],
+        )
+    return multiple_table    
+
 from scipy.stats import f_oneway, ttest_ind, mannwhitneyu, kruskal, chisquare, fisher_exact, chi2_contingency
 from statsmodels.stats.diagnostic import kstest_normal
 
+
+def calculate_chi2(df, group_variable, variable):
+    if len(df[variable].dropna().unique())==1:
+        df[variable] = df[variable].fillna(0)
+    ct = pd.crosstab(df[variable], df[group_variable])
+    _,p,_,_ = chi2_contingency(ct)
+    return p    
 
 def print_chi2(df, group_variable, variable):
     if len(df[variable].dropna().unique())==1:
@@ -216,7 +333,7 @@ def print_numeric(df, group_variable, variable):
 def print_summary(df, group_variable, variable):
     group_names = df[group_variable].unique()
     summ_tb = pd.concat([df[df[group_variable]==group][variable].describe() for group in group_names], axis=1, keys=group_names)
-    summ_tb.insert(0, 'Statistics for {}'.format(variable), summ_tb.index   )
+    summ_tb.insert(0, 'Statistics for {}'.format(variable), summ_tb.index)
     summ_table = dash_table.DataTable(
         id='summ_table',
         columns=[{'name': i, 'id': i} for i in summ_tb.columns],
@@ -247,8 +364,11 @@ def check_normality(df, variable, alpha=0.05):
     return False
 
 
-def get_groups(df, group_variable, variable):
-    return [df[df[group_variable]==group][variable].dropna() for group in df[group_variable].unique()]
+def get_groups(df, group_variable, variable, dropna=True):
+    if dropna:
+        return [df[df[group_variable]==group][variable].dropna() for group in df[group_variable].unique()]
+    else:
+        return [df[df[group_variable]==group][variable] for group in df[group_variable].unique()]
 
 def print_ttest(df, group_variable, variable):
     groups = get_groups(df, group_variable, variable)
@@ -326,25 +446,19 @@ def draw_numeric(df, group_variable, variable):
 def draw_histograms(df, group_variable, variable):
     groups = df[group_variable].unique()
     traces = [go.Histogram(x=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i)) for i in groups]
-    return html.Div(create_graph(traces, "histogram", xtitle=variable), className="six columns")
+    return html.Div(create_graph(traces, "histogram", xtitle=variable))#, className="six columns")
 
 def draw_boxplots(df, group_variable, variable):
     groups = df[group_variable].unique()
     traces = [go.Box(y=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i)) for i in groups]
-    return html.Div(create_graph(traces, "boxplot", xtitle=variable), className="six columns")
+    return html.Div(create_graph(traces, "boxplot", xtitle=variable))#, className="six columns")
 
-
-# def draw_numeric(df, group_variable, variable):
-#     groups = df[group_variable].unique()
-#     colors = assign_colors(groups)
-#     traces1 = [go.Histogram(x=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i), marker={'color': colors[str(i)]}) for i in groups]
-#     traces2 = [go.Box(y=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i), marker={'color': colors[str(i)]}) for i in groups]
-#     traces = traces1+traces2
 
 def check_categorical(dataset, col):
     if ((len(dataset[col].value_counts())<=2 or is_string_dtype(dataset[col])) and dataset[col].value_counts().iloc[0]!=len(dataset)):
         return True
     return False
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
