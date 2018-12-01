@@ -16,6 +16,13 @@ body {
 .js-plotly-plot {
 	margin-top:5px;
 	margin-bottom: 5px;
-	border-radius: 15px;
+	border-radius: 5px;
+	overflow: hidden;
+}
+
+table {
+	margin-top:5px;
+	margin-bottom: 5px;
+	border-radius: 5px;
 	overflow: hidden;
 }

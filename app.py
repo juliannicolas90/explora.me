@@ -195,7 +195,7 @@ def compare_multiple_variables(var1, vars, rows, columns):
     df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
     if not var1 or not vars:
         return
-    group_names = df[var1].unique()
+    group_names = list(map(str,df[var1].unique()))
     columns = ['Variable'] + list(group_names) + ['p value']
     rows = []
     for var in vars:
@@ -214,7 +214,7 @@ def compare_multiple_variables(var1, vars, rows, columns):
                 row = {'Variable': " "+str(cat)}
                 for i in range(len(groups)):
                     cnt = groups[i].value_counts()[cat] if cat in groups[i].unique() else 0
-                    percent = round(cnt/len(groups[i])*100,1)
+                    percent = round(cnt/len(groups[i])*100,2)
                     row[group_names[i]] = "{} ({}%)".format(cnt, percent)
                     row['p value'] = ""
                 var_rows.append(row)
