@@ -23,7 +23,8 @@ from pandas.api.types import is_numeric_dtype
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'style/styles.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
-#app.config['suppress_callback_exceptions']=True
+server = app.server
+app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
 #app.scripts.config.serve_locally = True
 
