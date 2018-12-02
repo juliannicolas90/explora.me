@@ -28,6 +28,27 @@ app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
 #app.scripts.config.serve_locally = True
 
+
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+        </footer>
+    </body>
+</html>
+'''
+
+##Index page with upload component
 app.layout = html.Div([
     html.H1("explora.me", style={'textAlign': 'center'}, className="logo"),
     dcc.Upload(
@@ -55,6 +76,7 @@ app.layout = html.Div([
     ])
 ])
 
+##Function to read the uploaded files (excel or csv)
 
 def parse_contents(contents, filename, date):
     content_type, content_string = contents.split(',')
@@ -79,7 +101,6 @@ def parse_contents(contents, filename, date):
         data=df.to_dict("rows"),
         row_deletable=True,
         style_cell={
-        # all three widths are needed
         'color': 'black',
         'minWidth': '200px',
         },
@@ -96,7 +117,21 @@ def parse_contents(contents, filename, date):
         df_table,
     ])
 
+##Callback to show the data 
+@app.callback(Output('output-data-upload', 'children'),
+              [Input('upload-data', 'contents')],
+              [State('upload-data', 'filename'),
+               State('upload-data', 'last_modified')])
+def update_output(list_of_contents, list_of_names, list_of_dates):
+    if list_of_contents is not None:
+        children = [
+            parse_contents(c, n, d) for c, n, d in
+            zip(list_of_contents, list_of_names, list_of_dates)]
+        return children
 
+
+
+##Callbacks to run when the data is uploaded; single or multiple variable analysis
 
 @app.callback(Output(component_id='analyze_table', component_property='children'),
             [Input('dataframe', 'data'), Input('dataframe', 'columns')])
@@ -139,7 +174,7 @@ def analyze_table_multiple(rows, columns):
     className="dropdown"
     )    
     dropdown2 = dcc.Dropdown(
-    options=[{'label': col, 'value': col} for col in df.columns],
+    options=[{'label': col, 'value': col} for col in df.columns if columns],
     multi=True,
     id='dropdown2_multiple',
     placeholder='Select a variable to evaluate',
@@ -159,17 +194,19 @@ def analyze_table_multiple(rows, columns):
         ]
 
 
-@app.callback(Output('output-data-upload', 'children'),
-              [Input('upload-data', 'contents')],
-              [State('upload-data', 'filename'),
-               State('upload-data', 'last_modified')])
-def update_output(list_of_contents, list_of_names, list_of_dates):
-    if list_of_contents is not None:
-        children = [
-            parse_contents(c, n, d) for c, n, d in
-            zip(list_of_contents, list_of_names, list_of_dates)]
-        return children
 
+GLOBAL_N_FOR_FISHER = 30
+GLOBAL_EXPECTED_FREQ = 5
+
+def check_for_fisher(df, var1, var2):
+    exp_freq = expected_freq(pd.crosstab(df[var1], df[var2]))
+    if exp_freq.shape != (2,2):
+        return False
+    if (exp_freq<=GLOBAL_EXPECTED_FREQ).any(axis=None) or len(df)<=GLOBAL_N_FOR_FISHER: 
+        return True
+    return False
+
+##Callback for when the user analyses data for single or multiple variables
 
 @app.callback(
     Output(component_id='responder', component_property='children'),
@@ -181,7 +218,10 @@ def compare_single_variable(var1, var2, rows, columns):
         return
     if check_categorical(df, var2):
         ##Check for expected frequency to use Fisher!!
-        return [print_chi2(df, var1, var2), draw_categorical(df, var1, var2)]
+        if check_for_fisher(df, var1, var2):
+            return[print_fisher(df, var1, var2), draw_categorical(df, var1, var2)]
+        else:
+            return [print_chi2(df, var1, var2), draw_categorical(df, var1, var2)]
 
     elif is_numeric_dtype(df[var2]):
         return [print_summary(df, var1, var2), print_numeric(df, var1, var2), draw_numeric(df, var1, var2)]
@@ -205,7 +245,7 @@ def compare_multiple_variables(var1, vars, rows, columns):
             var_rows = []
             row_1 = {group_name: "" for group_name in group_names}
             row_1['Variable'] = var
-            p = calculate_chi2(df, var1, var)
+            p = calculate_fisher(df, var1, var) if check_for_fisher(df, var1, var) else calculate_chi2(df, var1, var)
             row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
             var_rows.append(row_1)
             categories = df[var].unique()
@@ -238,14 +278,35 @@ def compare_multiple_variables(var1, vars, rows, columns):
             var_rows.append(row_mean)
             var_rows.append(row_median)
             rows += var_rows
+    df_table = pd.DataFrame(rows, columns=[c for c in columns])
     ##Create DataTable
-    multiple_table = create_datatable(rows, columns, id="multiple_table")
-    return html.Div(multiple_table)
+    multiple_table = generate_table(df_table)
+    return multiple_table
 
+TABLE_STYLE = {
+    "backgroundColor": "White",
+    "borderRadius": "5px",
+    "color": "black",
+}
 
-def get_p_numerical(df, var1, var):
-    groups = get_groups(df,var1, var)
-    if len(df[var1].unique()) > 2:
+def generate_table(dataframe):
+    return html.Div(html.Table(
+        # Header
+        [html.Tr([html.Th(col, style={"padding": "5px"}) for col in dataframe.columns])] +
+
+        # Body
+        [html.Tr([
+            html.Td(dataframe.iloc[i][col], style={"padding": "5px"}) for col in dataframe.columns
+        ]) for i in range(len(dataframe))],
+        className="twelve columns",
+        style=TABLE_STYLE), style={'overflow-x': "auto"}
+    )
+
+def get_p_numerical(df, group_variable, var):
+    """Get dataframe, group variable and a numerical variable and return p using
+    the corresponding statistical test according to assumptions."""
+    groups = get_groups(df,group_variable, var)
+    if len(df[group_variable].unique()) > 2:
         if check_normality(df, var):
             _, p = f_oneway(*groups)
         else:
@@ -257,29 +318,10 @@ def get_p_numerical(df, var1, var):
             _, p =  mannwhitneyu(*groups)
     return p 
 
-def create_datatable(rows, columns, id):
-    multiple_table = dash_table.DataTable(
-        id=id,
-        columns=[{'name': i, 'id': i} for i in columns],
-        data=rows,
-        style_cell={
-        # all three widths are needed
-        'whiteSpace': 'no-wrap',
-        'overflow': 'hidden',
-        'textOverflow': 'ellipsis',
-        'color': 'black'
-        },
-        style_table={
-        'overflowY': 'scroll'
-        },
-        css=[{
-        'selector': '.dash-cell div.dash-cell-value',
-        'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
-        }],
-        )
-    return multiple_table    
+###Statistical tests and graphics for single variable
 
 from scipy.stats import f_oneway, ttest_ind, mannwhitneyu, kruskal, chisquare, fisher_exact, chi2_contingency
+from scipy.stats.contingency import expected_freq
 from statsmodels.stats.diagnostic import kstest_normal
 
 
@@ -288,7 +330,14 @@ def calculate_chi2(df, group_variable, variable):
         df[variable] = df[variable].fillna(0)
     ct = pd.crosstab(df[variable], df[group_variable])
     _,p,_,_ = chi2_contingency(ct)
-    return p    
+    return p
+
+def calculate_fisher(df, group_variable, variable):
+    if len(df[variable].dropna().unique())==1:
+        df[variable] = df[variable].fillna(0)
+    ct = pd.crosstab(df[variable], df[group_variable])
+    oddsr, p = fisher_exact(ct)
+    return p
 
 def print_chi2(df, group_variable, variable):
     if len(df[variable].dropna().unique())==1:
@@ -296,27 +345,60 @@ def print_chi2(df, group_variable, variable):
     ct = pd.crosstab(df[variable], df[group_variable])
     chi2, p, dof, expected_freq = chi2_contingency(ct)
     ct.insert(0, '{}/{}'.format(variable, group_variable), pd.Series(df[variable].dropna().unique(), index=ct.index))
-    ct_table = dash_table.DataTable(
-        id='ct_table',
-        columns=[{"name": i, "id": i} for i in ct.columns],
-        data=ct.to_dict("rows"),
-        style_cell={
-        # all three widths are needed
-        'whiteSpace': 'no-wrap',
-        'overflow': 'hidden',
-        'textOverflow': 'ellipsis',
-        'color': 'black'
-        },
-        style_table={
-        'maxHeight': '300',
-        'overflowY': 'scroll'
-        },
-        css=[{
-        'selector': '.dash-cell div.dash-cell-value',
-        'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
-        }],
-        )
+    ct_table = generate_table(ct)
+    # ct_table = dash_table.DataTable(
+    #     id='ct_table',
+    #     columns=[{"name": i, "id": i} for i in ct.columns],
+    #     data=ct.to_dict("rows"),
+    #     style_cell={
+    #     # all three widths are needed
+    #     'whiteSpace': 'no-wrap',
+    #     'overflow': 'hidden',
+    #     'textOverflow': 'ellipsis',
+    #     'color': 'black'
+    #     },
+    #     style_table={
+    #     'maxHeight': '300',
+    #     'overflowY': 'scroll'
+    #     },
+    #     css=[{
+    #     'selector': '.dash-cell div.dash-cell-value',
+    #     'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
+    #     }],
+    #     )
     return html.Div([ct_table, html.Div("The chi2 is {}, with a p of {}.".format(chi2, p))])
+
+def print_fisher(df, group_variable, variable):
+    if len(df[variable].dropna().unique())==1:
+        df[variable] = df[variable].fillna(0)
+    ct = pd.crosstab(df[variable], df[group_variable])
+    oddsr, p = fisher_exact(ct)
+    ct.insert(0, '{}/{}'.format(variable, group_variable), pd.Series(df[variable].dropna().unique(), index=ct.index))
+    ct_table = generate_table(ct)
+    # ct_table = dash_table.DataTable(
+    #     id='ct_table',
+    #     columns=[{"name": i, "id": i} for i in ct.columns],
+    #     data=ct.to_dict("rows"),
+    #     style_cell={
+    #     # all three widths are needed
+    #     'whiteSpace': 'no-wrap',
+    #     'overflow': 'hidden',
+    #     'textOverflow': 'ellipsis',
+    #     'color': 'black'
+    #     },
+    #     style_table={
+    #     'maxHeight': '300',
+    #     'overflowY': 'scroll'
+    #     },
+    #     css=[{
+    #     'selector': '.dash-cell div.dash-cell-value',
+    #     'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
+    #     }],
+    #     )
+    return html.Div([ct_table, html.Div("The Fisher Exact test for differences in proportions gives a p of {}.".format(p))])
+
+
+
 
 def print_numeric(df, group_variable, variable):
     if len(df[group_variable].unique()) > 2:
@@ -334,27 +416,28 @@ def print_summary(df, group_variable, variable):
     group_names = df[group_variable].unique()
     summ_tb = pd.concat([df[df[group_variable]==group][variable].describe() for group in group_names], axis=1, keys=group_names)
     summ_tb.insert(0, 'Statistics for {}'.format(variable), summ_tb.index)
-    summ_table = dash_table.DataTable(
-        id='summ_table',
-        columns=[{'name': i, 'id': i} for i in summ_tb.columns],
-        data=summ_tb.to_dict('rows'),
-        style_cell={
-        # all three widths are needed
-        'whiteSpace': 'no-wrap',
-        'overflow': 'hidden',
-        'textOverflow': 'ellipsis',
-        'color': 'black'
-        },
-        style_table={
-        'maxHeight': '300',
-        'overflowY': 'scroll'
-        },
-        css=[{
-        'selector': '.dash-cell div.dash-cell-value',
-        'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
-        }],
-        )
-    return html.Div(summ_table)
+    return generate_table(summ_tb)
+    # summ_table = dash_table.DataTable(
+    #     id='summ_table',
+    #     columns=[{'name': i, 'id': i} for i in summ_tb.columns],
+    #     data=summ_tb.to_dict('rows'),
+    #     style_cell={
+    #     # all three widths are needed
+    #     'whiteSpace': 'no-wrap',
+    #     'overflow': 'hidden',
+    #     'textOverflow': 'ellipsis',
+    #     'color': 'black'
+    #     },
+    #     style_table={
+    #     'maxHeight': '300',
+    #     'overflowY': 'scroll'
+    #     },
+    #     css=[{
+    #     'selector': '.dash-cell div.dash-cell-value',
+    #     'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
+    #     }],
+    #     )
+    # return html.Div(summ_table)
 
 def check_normality(df, variable, alpha=0.05):
     ##use only KS or Anderson Starling also?
