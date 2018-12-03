@@ -21,15 +21,16 @@ import io
 
 from pandas.api.types import is_string_dtype
 from pandas.api.types import is_numeric_dtype
-from flask_sslify import SSLify
+#from flask_sslify import SSLify
 import flask
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'style/styles.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
-#sslify = SSLify(server)
 
 server = app.server
+#sslify = SSLify(server)
+
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
 app.server.secret_key = "asndiopasmdasdnasdosanjdp"
