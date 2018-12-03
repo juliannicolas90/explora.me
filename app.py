@@ -33,7 +33,7 @@ try:
     from flask_sslify import SSlify
     sslify = SSlify(server)
 except ImportError:
-    app.log("Bla")
+    server.logger.info("Could not import SSlify")
 
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
