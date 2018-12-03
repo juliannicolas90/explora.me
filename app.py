@@ -29,11 +29,11 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 server = app.server
 
-try:
-    from flask_sslify import SSlify
-    sslify = SSlify(server)
-except ImportError:
-    server.logger.info("Could not import SSlify")
+#try:
+from flask_sslify import SSlify
+sslify = SSlify(server)
+#except ImportError:
+#    server.logger.info("Could not import SSlify")
 
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
