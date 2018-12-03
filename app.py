@@ -29,6 +29,9 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 server = app.server
 
+from flask_sslify import SSLify
+sslify = SSLify(server)
+
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
 app.server.secret_key = "asndiopasmdasdnasdosanjdp"
@@ -495,4 +498,4 @@ def check_categorical(dataset, col):
     return False
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
