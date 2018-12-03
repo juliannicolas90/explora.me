@@ -32,7 +32,7 @@ server = app.server
 try:
     from flask_sslify import SSLify
     sslify = SSLify(server, permanent=True)
-except ImportError:
+except ModuleNotFoundError:
     app.log("Didn't load SSLify")
 
 app.config['suppress_callback_exceptions']=True
