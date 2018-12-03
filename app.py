@@ -28,7 +28,7 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'style/sty
 
 server = flask.Flask(__name__)
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets, server=server)
-sslify = SSLify(server)
+#sslify = SSLify(server)
 
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
