@@ -16,6 +16,9 @@ import plotly.graph_objs as go
 import numpy as np
 import pandas as pd
 
+from flask import send_file, session, request, abort
+import io
+
 from pandas.api.types import is_string_dtype
 from pandas.api.types import is_numeric_dtype
 
@@ -26,6 +29,7 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
+app.server.secret_key = "asndiopasmdasdnasdosanjdp"
 #app.scripts.config.serve_locally = True
 
 
@@ -48,10 +52,7 @@ app.index_string = '''
 </html>
 '''
 
-##Index page with upload component
-app.layout = html.Div([
-    html.H1("explora.me", style={'textAlign': 'center'}, className="logo"),
-    dcc.Upload(
+upload_component = dcc.Upload(
         id='upload-data',
         children=html.Div([
             'Drag and Drop or ',
@@ -65,10 +66,12 @@ app.layout = html.Div([
             'borderStyle': 'dashed',
             'borderRadius': '5px',
             'textAlign': 'center',
-        },
-        # Allow multiple files to be uploaded
-        multiple=True
-    ),
+        }, multiple=True)
+
+##Index page with upload component
+app.layout = html.Div([
+    html.H1("explora.me", style={'textAlign': 'center'}, className="logo"),
+    upload_component,
     html.Div(id='output-data-upload'),
     html.Div([
         html.Div(id='analyze_table', className="six columns", style={'padding': '5px'}),
@@ -128,8 +131,6 @@ def update_output(list_of_contents, list_of_names, list_of_dates):
             parse_contents(c, n, d) for c, n, d in
             zip(list_of_contents, list_of_names, list_of_dates)]
         return children
-
-
 
 ##Callbacks to run when the data is uploaded; single or multiple variable analysis
 
@@ -193,19 +194,6 @@ def analyze_table_multiple(rows, columns):
         html.Div(id='responder_multiple'),
         ]
 
-
-
-GLOBAL_N_FOR_FISHER = 30
-GLOBAL_EXPECTED_FREQ = 5
-
-def check_for_fisher(df, var1, var2):
-    exp_freq = expected_freq(pd.crosstab(df[var1], df[var2]))
-    if exp_freq.shape != (2,2):
-        return False
-    if (exp_freq<=GLOBAL_EXPECTED_FREQ).any(axis=None) or len(df)<=GLOBAL_N_FOR_FISHER: 
-        return True
-    return False
-
 ##Callback for when the user analyses data for single or multiple variables
 
 @app.callback(
@@ -217,7 +205,6 @@ def compare_single_variable(var1, var2, rows, columns):
     if not var1 or not var2:
         return
     if check_categorical(df, var2):
-        ##Check for expected frequency to use Fisher!!
         if check_for_fisher(df, var1, var2):
             return[print_fisher(df, var1, var2), draw_categorical(df, var1, var2)]
         else:
@@ -281,7 +268,8 @@ def compare_multiple_variables(var1, vars, rows, columns):
     df_table = pd.DataFrame(rows, columns=[c for c in columns])
     ##Create DataTable
     multiple_table = generate_table(df_table)
-    return multiple_table
+    session['multiple_table'] = df_table.to_json(orient="split")
+    return [multiple_table, html.A("Save", className="button", href="/download_multiple/")]
 
 TABLE_STYLE = {
     "backgroundColor": "White",
@@ -290,7 +278,7 @@ TABLE_STYLE = {
 }
 
 def generate_table(dataframe):
-    return html.Div(html.Table(
+    return html.Div([html.Table(
         # Header
         [html.Tr([html.Th(col, style={"padding": "5px"}) for col in dataframe.columns])] +
 
@@ -299,8 +287,35 @@ def generate_table(dataframe):
             html.Td(dataframe.iloc[i][col], style={"padding": "5px"}) for col in dataframe.columns
         ]) for i in range(len(dataframe))],
         className="twelve columns",
-        style=TABLE_STYLE), style={'overflow-x': "auto"}
+        style=TABLE_STYLE)], style={'overflow-x': "auto"}
     )
+
+@app.server.route("/download_multiple/")
+def download_multiple():
+    if not request.referrer:
+        abort(404)
+    data = session.get('multiple_table', None)
+    df = pd.read_json(data, orient="split")
+    strIO = io.BytesIO()
+    excel_writer = pd.ExcelWriter(strIO, engine="xlsxwriter")
+    df.to_excel(excel_writer, index=False, sheet_name="Sheet 1")
+    excel_writer.save()
+    excel_data = strIO.getvalue()
+    strIO.seek(0)
+    return send_file(strIO,
+        attachment_filename='multiple_table.xlsx',
+        as_attachment=True)
+
+###Statistical tests and graphics for single variable
+
+from scipy.stats import f_oneway, ttest_ind, mannwhitneyu, kruskal, chisquare, fisher_exact, chi2_contingency
+from scipy.stats.contingency import expected_freq
+from statsmodels.stats.diagnostic import kstest_normal
+
+
+GLOBAL_N_FOR_FISHER = 30
+GLOBAL_EXPECTED_FREQ = 5
+
 
 def get_p_numerical(df, group_variable, var):
     """Get dataframe, group variable and a numerical variable and return p using
@@ -318,12 +333,13 @@ def get_p_numerical(df, group_variable, var):
             _, p =  mannwhitneyu(*groups)
     return p 
 
-###Statistical tests and graphics for single variable
-
-from scipy.stats import f_oneway, ttest_ind, mannwhitneyu, kruskal, chisquare, fisher_exact, chi2_contingency
-from scipy.stats.contingency import expected_freq
-from statsmodels.stats.diagnostic import kstest_normal
-
+def check_for_fisher(df, var1, var2):
+    exp_freq = expected_freq(pd.crosstab(df[var1], df[var2]))
+    if exp_freq.shape != (2,2):
+        return False
+    if (exp_freq<=GLOBAL_EXPECTED_FREQ).any(axis=None) or len(df)<=GLOBAL_N_FOR_FISHER: 
+        return True
+    return False
 
 def calculate_chi2(df, group_variable, variable):
     if len(df[variable].dropna().unique())==1:
@@ -346,26 +362,6 @@ def print_chi2(df, group_variable, variable):
     chi2, p, dof, expected_freq = chi2_contingency(ct)
     ct.insert(0, '{}/{}'.format(variable, group_variable), pd.Series(df[variable].dropna().unique(), index=ct.index))
     ct_table = generate_table(ct)
-    # ct_table = dash_table.DataTable(
-    #     id='ct_table',
-    #     columns=[{"name": i, "id": i} for i in ct.columns],
-    #     data=ct.to_dict("rows"),
-    #     style_cell={
-    #     # all three widths are needed
-    #     'whiteSpace': 'no-wrap',
-    #     'overflow': 'hidden',
-    #     'textOverflow': 'ellipsis',
-    #     'color': 'black'
-    #     },
-    #     style_table={
-    #     'maxHeight': '300',
-    #     'overflowY': 'scroll'
-    #     },
-    #     css=[{
-    #     'selector': '.dash-cell div.dash-cell-value',
-    #     'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
-    #     }],
-    #     )
     return html.Div([ct_table, html.Div("The chi2 is {}, with a p of {}.".format(chi2, p))])
 
 def print_fisher(df, group_variable, variable):
@@ -375,30 +371,7 @@ def print_fisher(df, group_variable, variable):
     oddsr, p = fisher_exact(ct)
     ct.insert(0, '{}/{}'.format(variable, group_variable), pd.Series(df[variable].dropna().unique(), index=ct.index))
     ct_table = generate_table(ct)
-    # ct_table = dash_table.DataTable(
-    #     id='ct_table',
-    #     columns=[{"name": i, "id": i} for i in ct.columns],
-    #     data=ct.to_dict("rows"),
-    #     style_cell={
-    #     # all three widths are needed
-    #     'whiteSpace': 'no-wrap',
-    #     'overflow': 'hidden',
-    #     'textOverflow': 'ellipsis',
-    #     'color': 'black'
-    #     },
-    #     style_table={
-    #     'maxHeight': '300',
-    #     'overflowY': 'scroll'
-    #     },
-    #     css=[{
-    #     'selector': '.dash-cell div.dash-cell-value',
-    #     'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
-    #     }],
-    #     )
     return html.Div([ct_table, html.Div("The Fisher Exact test for differences in proportions gives a p of {}.".format(p))])
-
-
-
 
 def print_numeric(df, group_variable, variable):
     if len(df[group_variable].unique()) > 2:
@@ -417,27 +390,6 @@ def print_summary(df, group_variable, variable):
     summ_tb = pd.concat([df[df[group_variable]==group][variable].describe() for group in group_names], axis=1, keys=group_names)
     summ_tb.insert(0, 'Statistics for {}'.format(variable), summ_tb.index)
     return generate_table(summ_tb)
-    # summ_table = dash_table.DataTable(
-    #     id='summ_table',
-    #     columns=[{'name': i, 'id': i} for i in summ_tb.columns],
-    #     data=summ_tb.to_dict('rows'),
-    #     style_cell={
-    #     # all three widths are needed
-    #     'whiteSpace': 'no-wrap',
-    #     'overflow': 'hidden',
-    #     'textOverflow': 'ellipsis',
-    #     'color': 'black'
-    #     },
-    #     style_table={
-    #     'maxHeight': '300',
-    #     'overflowY': 'scroll'
-    #     },
-    #     css=[{
-    #     'selector': '.dash-cell div.dash-cell-value',
-    #     'rule': 'display: inline; white-space: inherit; overflow: inherit; text-overflow: inherit;'
-    #     }],
-    #     )
-    # return html.Div(summ_table)
 
 def check_normality(df, variable, alpha=0.05):
     ##use only KS or Anderson Starling also?
@@ -445,7 +397,6 @@ def check_normality(df, variable, alpha=0.05):
     if p>alpha:
         return True
     return False
-
 
 def get_groups(df, group_variable, variable, dropna=True):
     if dropna:
@@ -536,12 +487,10 @@ def draw_boxplots(df, group_variable, variable):
     traces = [go.Box(y=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i)) for i in groups]
     return html.Div(create_graph(traces, "boxplot", xtitle=variable))#, className="six columns")
 
-
 def check_categorical(dataset, col):
     if ((len(dataset[col].value_counts())<=2 or is_string_dtype(dataset[col])) and dataset[col].value_counts().iloc[0]!=len(dataset)):
         return True
     return False
-
 
 if __name__ == '__main__':
     app.run_server(debug=True)

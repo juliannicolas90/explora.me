@@ -26,3 +26,10 @@ table {
 	border-radius: 5px;
 	overflow: hidden;
 }
+
+
+a.button {
+	background-color: rgba(145,164,181,1);
+	color: rgba(12,54,97,1);
+	margin: 5px;
+}
