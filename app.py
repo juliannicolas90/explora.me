@@ -29,12 +29,6 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 server = app.server
 
-try:
-    from flask_sslify import SSLify
-    sslify = SSLify(server, permanent=True)
-except ModuleNotFoundError:
-    app.log("Didn't load SSLify")
-
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
 app.server.secret_key = "asndiopasmdasdnasdosanjdp"
