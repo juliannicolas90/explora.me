@@ -26,10 +26,10 @@ import flask
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'style/styles.css']
 
-server = flask.Flask(__name__)
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets, server=server)
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 #sslify = SSLify(server)
 
+server = app.server
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
 app.server.secret_key = "asndiopasmdasdnasdosanjdp"
