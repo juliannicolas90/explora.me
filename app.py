@@ -23,12 +23,10 @@ from pandas.api.types import is_string_dtype
 from pandas.api.types import is_numeric_dtype
 from flask_sslify import SSLify
 
-
-
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'style/styles.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
-sslify = SSLify(app)
+sslify = SSLify(app.server)
 
 server = app.server
 app.config['suppress_callback_exceptions']=True
