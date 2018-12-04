@@ -81,7 +81,7 @@ app.layout = html.Div([
     upload_component,
     html.Div(id='output-data-upload'),
     html.Div([
-        html.Div(id='analyze_table', className="six columns", style={'padding': '5px'}),
+        html.Div(id='analyze_table', className="six columns", style={'padding': '5px', 'paddingBottom': "20px"}),
         html.Div(id='analyze_table_multiple', className="six columns", style={'padding': '5px', 'paddingBottom': "20px"}),
     ]),
     html.Div("No data is stored by explora.me. The statistics displayed here are for exploratory use only. Statistical analysis should be performed by a statistician. Copyright © {} by Julián Nicolás Acosta.".format(year), className="footer")
