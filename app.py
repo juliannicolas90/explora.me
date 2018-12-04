@@ -395,7 +395,7 @@ def print_numeric(df, group_variable, variable):
 
 def print_summary(df, group_variable, variable):
     group_names = df[group_variable].unique()
-    summ_tb = pd.concat([df[df[group_variable]==group][variable].describe() for group in group_names], axis=1, keys=group_names)
+    summ_tb = pd.concat([df[df[group_variable]==group][variable].describe().round(1) for group in group_names], axis=1, keys=group_names)
     summ_tb.insert(0, 'Statistics for {}'.format(variable), summ_tb.index)
     return generate_table(summ_tb)
 
