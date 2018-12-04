@@ -28,8 +28,20 @@ table {
 }
 
 
-a.button {
+.button {
 	background-color: rgba(145,164,181,1);
 	color: rgba(12,54,97,1);
 	margin: 5px;
+	margin-bottom:15px;
+}
+
+.footer {
+  color: black;
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 0em;
+  background-color: #efefef;
+  text-align: center;
 }

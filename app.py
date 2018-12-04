@@ -29,6 +29,9 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 server = app.server
 
+year = datetime.datetime.now().year
+
+
 from flask_sslify import SSLify
 sslify = SSLify(server)
 
@@ -36,6 +39,7 @@ app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
 app.server.secret_key = "asndiopasmdasdnasdosanjdp"
 #app.scripts.config.serve_locally = True
+
 
 
 app.index_string = '''
@@ -80,8 +84,9 @@ app.layout = html.Div([
     html.Div(id='output-data-upload'),
     html.Div([
         html.Div(id='analyze_table', className="six columns", style={'padding': '5px'}),
-        html.Div(id='analyze_table_multiple', className="six columns", style={'padding': '5px'}),
-    ])
+        html.Div(id='analyze_table_multiple', className="six columns", style={'padding': '5px', 'paddingBottom': "20px"}),
+    ]),
+    html.Div("No data is stored by explora.me. The statistics displayed here are for exploratory use only. Statistical analysis should be performed by a statistician. Copyright © {} by Julián Nicolás Acosta.".format(year), className="footer")
 ])
 
 ##Function to read the uploaded files (excel or csv)
