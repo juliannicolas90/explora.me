@@ -40,8 +40,6 @@ app.title = "explora.me"
 app.server.secret_key = "asndiopasmdasdnasdosanjdp"
 #app.scripts.config.serve_locally = True
 
-
-
 app.index_string = '''
 <!DOCTYPE html>
 <html>

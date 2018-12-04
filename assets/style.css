@@ -20,6 +20,11 @@ body {
 	overflow: hidden;
 }
 
+
+.graph_container {
+	margin-bottom: 10px;
+}
+
 table {
 	margin-top:5px;
 	margin-bottom: 5px;
