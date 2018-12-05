@@ -81,8 +81,8 @@ app.layout = html.Div([
     upload_component,
     html.Div(id='output-data-upload'),
     html.Div([
-        html.Div(id='analyze_table', className="six columns", style={'padding': '5px', 'paddingBottom': "20px"}),
-        html.Div(id='analyze_table_multiple', className="six columns", style={'padding': '5px', 'paddingBottom': "20px"}),
+        html.Div(id='analyze_table', className="six columns", style={'padding': '5px'}),
+        html.Div(id='analyze_table_multiple', className="six columns", style={'padding': '5px'}),
     ]),
     html.Div("No data is stored by explora.me. The statistics displayed here are for exploratory use only. Statistical analysis should be performed by a statistician. Copyright © {} by Julián Nicolás Acosta.".format(year), className="footer")
 ])
@@ -108,7 +108,7 @@ def parse_contents(contents, filename, date):
         ])
     df_table = dash_table.DataTable(
         id='dataframe',
-        columns=[{"name": i, "id": i,'deletable': True,'editable_name': True} for i in df.columns],
+        columns=[{"name": i, "id": i,'deletable': True} for i in df.columns],
         data=df.to_dict("rows"),
         row_deletable=True,
         style_cell={
@@ -169,7 +169,7 @@ def analyze_table(rows, columns):
 
         html.Hr(),
 
-        html.Div(id='responder'),
+        html.Div(id='responder', style={'paddingBottom': "20px"}),
         ]
 
 @app.callback(Output(component_id='analyze_table_multiple', component_property='children'),
@@ -199,7 +199,7 @@ def analyze_table_multiple(rows, columns):
 
         html.Hr(),
 
-        html.Div(id='responder_multiple'),
+        html.Div(id='responder_multiple', style={'paddingBottom': "20px"}),
         ]
 
 ##Callback for when the user analyses data for single or multiple variables
@@ -210,8 +210,10 @@ def analyze_table_multiple(rows, columns):
 )
 def compare_single_variable(var1, var2, rows, columns):
     df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
-    if not var1 or not var2:
+    if not var2:
         return
+    if not var1:
+        return draw_pie_chart(df, var2) if check_categorical(df, var2) else draw_histogram(df, var2)
     if check_categorical(df, var2):
         if check_for_fisher(df, var1, var2):
             return[print_fisher(df, var1, var2), draw_categorical(df, var1, var2)]
@@ -228,51 +230,70 @@ def compare_single_variable(var1, var2, rows, columns):
 )
 def compare_multiple_variables(var1, vars, rows, columns):
     df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
-    if not var1 or not vars:
+    if not vars:
         return
-    group_names = list(map(str,df[var1].unique()))
-    columns = ['Variable'] + list(group_names) + ['p value']
     rows = []
-    for var in vars:
-        if check_categorical(df, var):
-            ##Calculate percent of each category
-            ##Calculate Chi2
-            var_rows = []
-            row_1 = {group_name: "" for group_name in group_names}
-            row_1['Variable'] = var
-            p = calculate_fisher(df, var1, var) if check_for_fisher(df, var1, var) else calculate_chi2(df, var1, var)
-            row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
-            var_rows.append(row_1)
-            categories = df[var].unique()
-            groups = get_groups(df, var1, var, dropna=False)
-            for cat in categories:
-                row = {'Variable': " "+str(cat)}
-                for i in range(len(groups)):
-                    cnt = groups[i].value_counts()[cat] if cat in groups[i].unique() else 0
-                    percent = round(cnt/len(groups[i])*100,2)
-                    row[group_names[i]] = "{} ({}%)".format(cnt, percent)
-                    row['p value'] = ""
-                var_rows.append(row)
-            rows += var_rows
-        elif is_numeric_dtype(df[var]):
-            groups = get_groups(df, var1, var, dropna=True)
-            ##Calculate means + std and median + IQR
-            ##Calculate t-test, MW, ANOVA o Kruskel
-            var_rows = []
-            row_1 = {group_name: "" for group_name in group_names}
-            row_1['Variable'] = var
-            p = get_p_numerical(df, var1, var)
-            row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
-            row_mean = {group_names[i]: "{} +- {}".format(round(groups[i].mean(),2), round(groups[i].std(),2)) for i in range(len(groups))}
-            row_mean['Variable'] = "Mean +- Std"
-            row_mean['p value'] = ""
-            row_median = {group_names[i]: "{} ({}-{})".format(round(groups[i].median(),2), groups[i].quantile(0.25), groups[i].quantile(0.75)) for i in range(len(groups))}
-            row_median['Variable'] = "Median (IQR)"
-            row_median['p value'] = ""
-            var_rows.append(row_1)
-            var_rows.append(row_mean)
-            var_rows.append(row_median)
-            rows += var_rows
+    if not var1:
+        columns = ['Variable', 'Value']
+        for var in vars:
+            row = {"Variable": var, "Value": ""}
+            rows.append(row)
+            if check_categorical(df, var):
+                categories = df[var].unique()
+                for cat in categories:
+                    cnt = df[var].value_counts()[cat] if cat in df[var].unique() else 0
+                    percent = round(cnt/len(df[var])*100,2)
+                    row = {"Variable": cat, "Value": "{} ({}%)".format(cnt,percent)}
+                    rows.append(row)
+            elif is_numeric_dtype(df[var]):
+                row = {"Variable": "Mean (Std)", "Value": "{} ({})".format(round(df[var].mean(),2), round(df[var].std(),2))}
+                rows.append(row)
+                row = {"Variable": "Median (IQR)", "Value": "{} ({}-{})".format(round(df[var].median(),2), round(df[var].quantile(0.25),2), round(df[var].quantile(0.75),2))}
+                rows.append(row)
+
+    else:
+        group_names = list(map(str,df[var1].unique()))
+        columns = ['Variable'] + list(group_names) + ['p value']
+        for var in vars:
+            if check_categorical(df, var):
+                ##Calculate percent of each category
+                ##Calculate Chi2
+                var_rows = []
+                row_1 = {group_name: "" for group_name in group_names}
+                row_1['Variable'] = var
+                p = calculate_fisher(df, var1, var) if check_for_fisher(df, var1, var) else calculate_chi2(df, var1, var)
+                row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
+                var_rows.append(row_1)
+                categories = df[var].unique()
+                groups = get_groups(df, var1, var, dropna=False)
+                for cat in categories:
+                    row = {'Variable': " "+str(cat)}
+                    for i in range(len(groups)):
+                        cnt = groups[i].value_counts()[cat] if cat in groups[i].unique() else 0
+                        percent = round(cnt/len(groups[i])*100,2)
+                        row[group_names[i]] = "{} ({}%)".format(cnt, percent)
+                        row['p value'] = ""
+                    var_rows.append(row)
+                rows += var_rows
+            elif is_numeric_dtype(df[var]):
+                groups = get_groups(df, var1, var, dropna=True)
+                ##Calculate means + std and median + IQR
+                ##Calculate t-test, MW, ANOVA o Kruskel
+                var_rows = []
+                row_1 = {group_name: "" for group_name in group_names}
+                row_1['Variable'] = var
+                p = get_p_numerical(df, var1, var)
+                row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
+                row_mean = {group_names[i]: "{} ({})".format(round(groups[i].mean(),2), round(groups[i].std(),2)) for i in range(len(groups))}
+                row_mean['Variable'] = "Mean (Std)"
+                row_mean['p value'] = ""
+                row_median = {group_names[i]: "{} ({}-{})".format(round(groups[i].median(),2), groups[i].quantile(0.25), groups[i].quantile(0.75)) for i in range(len(groups))}
+                row_median['Variable'] = "Median (IQR)"
+                row_median['p value'] = ""
+                var_rows.append(row_1)
+                var_rows.append(row_mean)
+                var_rows.append(row_median)
+                rows += var_rows
     df_table = pd.DataFrame(rows, columns=[c for c in columns])
     ##Create DataTable
     multiple_table = generate_table(df_table)
@@ -494,6 +515,31 @@ def draw_boxplots(df, group_variable, variable):
     groups = df[group_variable].unique()
     traces = [go.Box(y=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i)) for i in groups]
     return html.Div(create_graph(traces, "boxplot", xtitle=variable))#, className="six columns")
+
+def draw_histogram(df, variable):
+    trace = go.Histogram(x=df[variable], name=variable)
+    data = [trace]
+    layout = go.Layout(title="Variable: ".format(variable))
+    fig = go.Figure(data=data, layout=layout)
+    mean = round(df[variable].mean(),2)
+    median = round(df[variable].median(),2)
+    std = round(df[variable].std(),2)
+    iq25 = round(df[variable].quantile(0.25),2)
+    iq75= round(df[variable].quantile(0.75),2)
+    if check_normality(df, variable):
+        normality = "Variable {} follows a normal distribution according to Kolmogorov-Smirnov test, with a mean of {}, a standard deviation of {}, a median of {}, and interquartile range {}-{}".format(variable, mean, std, median, iq25, iq75)
+    else:
+        normality = "Variable {} does not follow a normal distribution according to Kolmogorov-Smirnov test, with a mean of {}, a standard deviation of {}, a median of {}, and interquartile range {}-{}".format(variable, mean, std, median, iq25, iq75)
+    return [html.Div(normality), dcc.Graph(id="hist", figure={'data': fig})]
+
+def draw_pie_chart(df, variable):
+    trace = go.Pie(labels=df[variable].value_counts().keys().tolist(),values=df[variable].value_counts().tolist())
+    data = [trace]
+    layout = go.Layout(
+                   title='Variable: {}'.format(variable),
+                   )
+    fig = go.Figure(data=data, layout=layout)
+    return dcc.Graph(id="pie", figure={'data': fig})
 
 def check_categorical(dataset, col):
     if ((len(dataset[col].value_counts())<=2 or is_string_dtype(dataset[col])) and dataset[col].value_counts().iloc[0]!=len(dataset)):
