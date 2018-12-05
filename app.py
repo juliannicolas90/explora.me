@@ -427,25 +427,25 @@ def print_ttest(df, group_variable, variable):
     groups = get_groups(df, group_variable, variable)
     t, p = ttest_ind(*groups, nan_policy="omit")
     p = "<0.0001" if p<0.0001 else round(p, 4)
-    return html.Div("{} is normally distributed according to Kolmogorov-Smirnov test. The t statistic for comparing means is {}, with a p of {}.".format(variable, t, p))
+    return html.Div("{} is normally distributed according to Kolmogorov-Smirnov test. The t statistic for comparing means is {}, with a p of {}.".format(variable, t, p), className="stats_box")
 
 def print_anova(df, group_variable, variable):
     groups = get_groups(df, group_variable, variable)
     F, p = f_oneway(*groups)
     p = "<0.0001" if p<0.0001 else round(p, 4)
-    return html.Div("{} is normally distributed according to Kolmogorov-Smirnov test. The ANOVA (F statistic) for comparing means is {}, with a p of {}.".format(variable, F, p))
+    return html.Div("{} is normally distributed according to Kolmogorov-Smirnov test. The ANOVA (F statistic) for comparing means is {}, with a p of {}.".format(variable, F, p), className="stats_box")
 
 def print_mannwhitney(df, group_variable, variable):
     groups = get_groups(df, group_variable, variable)
     u, p = mannwhitneyu(*groups)
     p = "<0.0001" if p<0.0001 else round(p, 4)
-    return html.Div("{} is not normally distributed according to Kolmogorov-Smirnov test. The u (Mann-Whitney) statistic for comparing distributions is {}, with a p of {}.".format(variable, u, p))    
+    return html.Div("{} is not normally distributed according to Kolmogorov-Smirnov test. The u (Mann-Whitney) statistic for comparing distributions is {}, with a p of {}.".format(variable, u, p), className="stats_box")    
 
 def print_kruskal(df, group_variable, variable):
     groups = get_groups(df, group_variable, variable)
     H, p = kruskal(*groups)
     p = "<0.0001" if p<0.0001 else round(p, 4)
-    return html.Div("{} is not normally distributed according to Kolmogorov-Smirnov test. The H (Kruskal-Wallis) statistic for comparing distributions is {}, with a p of {}.".format(variable, H, p))    
+    return html.Div("{} is not normally distributed according to Kolmogorov-Smirnov test. The H (Kruskal-Wallis) statistic for comparing distributions is {}, with a p of {}.".format(variable, H, p), className="stats_box")    
 
 def draw_categorical(df, group_variable, variable, percent=True):
     if percent:
