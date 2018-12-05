@@ -21,13 +21,8 @@ body {
 }
 
 
-.graph_container {
-	margin-bottom: 10px;
-}
-
 table {
 	margin-top:5px;
-	margin-bottom: 5px;
 	border-radius: 5px;
 	overflow: hidden;
 }
@@ -37,7 +32,7 @@ table {
 	background-color: rgba(145,164,181,1);
 	color: rgba(12,54,97,1);
 	margin: 5px;
-	margin-bottom:15px;
+	margin:15px;
 }
 
 .footer {
@@ -50,3 +45,22 @@ table {
   background-color: #efefef;
   text-align: center;
 }
+
+.footer a {
+	color:black;
+}
+._dash-undo-redo {
+  display: none;
+}
+
+
+.table_warning {
+	border: 1px solid;
+	margin: 10px 0px;
+	padding:15px 10px 15px 50px;
+	background-repeat: no-repeat;
+	background-position: 10px center;
+	color: #9F6000;
+	background-color: #FEEFB3;
+}
+

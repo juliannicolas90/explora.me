@@ -1,44 +1,36 @@
 import base64
 import datetime
 import io
-
 import dash
 from dash.dependencies import Input, Output, State
 import dash_core_components as dcc
 import dash_html_components as html
-
 import dash_table
-
+from flask import send_file, session, request, abort
+from flask_sslify import SSLify
 import plotly.plotly as py
 from plotly import tools
 import plotly.graph_objs as go
-
 import numpy as np
 import pandas as pd
-
-from flask import send_file, session, request, abort
-import io
-
 from pandas.api.types import is_string_dtype
 from pandas.api.types import is_numeric_dtype
-import flask
 
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'style/styles.css']
 
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
-
-server = app.server
+from scipy.stats import f_oneway, ttest_ind, mannwhitneyu, kruskal, chisquare, fisher_exact, chi2_contingency
+from scipy.stats.contingency import expected_freq
+from statsmodels.stats.diagnostic import kstest_normal
+GLOBAL_N_FOR_FISHER = 30
+GLOBAL_EXPECTED_FREQ = 5
 
 year = datetime.datetime.now().year
-
-
-from flask_sslify import SSLify
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'style/styles.css']
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+server = app.server
 sslify = SSLify(server)
-
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
 app.server.secret_key = "asndiopasmdasdnasdosanjdp"
-#app.scripts.config.serve_locally = True
 
 app.index_string = '''
 <!DOCTYPE html>
@@ -58,6 +50,12 @@ app.index_string = '''
     </body>
 </html>
 '''
+
+TABLE_STYLE = {
+    "backgroundColor": "White",
+    "borderRadius": "5px",
+    "color": "black",
+}
 
 upload_component = dcc.Upload(
         id='upload-data',
@@ -81,10 +79,10 @@ app.layout = html.Div([
     upload_component,
     html.Div(id='output-data-upload'),
     html.Div([
-        html.Div(id='analyze_table', className="six columns", style={'padding': '5px'}),
-        html.Div(id='analyze_table_multiple', className="six columns", style={'padding': '5px'}),
+        html.Div(id='analyze_table', className="six columns"),
+        html.Div(id='analyze_table_multiple', className="six columns"),
     ]),
-    html.Div("No data is stored by explora.me. The statistics displayed here are for exploratory use only. Statistical analysis should be performed by a statistician. Copyright © {} by Julián Nicolás Acosta.".format(year), className="footer")
+    html.Div([html.Span("No data is stored by explora.me. The statistics displayed here are for exploratory use only. Statistical analysis should be performed by a statistician. Copyright © {} by ".format(year)),html.A("JN Acosta.", href="https://www.linkedin.com/in/juli%C3%A1n-nicol%C3%A1s-acosta-9b753045/", target="_blank")], className="footer")
 ])
 
 ##Function to read the uploaded files (excel or csv)
@@ -160,16 +158,13 @@ def analyze_table(rows, columns):
     )   
     return [
         html.Hr(),  # horizontal line
-
         html.H4("Single Variable Analysis", style=dict(textAlign="center")),
         html.H6("Choose a Group Variable:", style=dict(textAlign="center")),
         dropdown1,
         html.H6("Choose a Analysis Variable:", style=dict(textAlign="center")),
         dropdown2,
-
         html.Hr(),
-
-        html.Div(id='responder', style={'paddingBottom': "20px"}),
+        html.Div(id='responder', style={'paddingBottom': "30px"}),
         ]
 
 @app.callback(Output(component_id='analyze_table_multiple', component_property='children'),
@@ -196,10 +191,8 @@ def analyze_table_multiple(rows, columns):
         dropdown1,
         html.H6("Choose a Analysis Variable:", style=dict(textAlign="center")),
         dropdown2,
-
         html.Hr(),
-
-        html.Div(id='responder_multiple', style={'paddingBottom': "20px"}),
+        html.Div(id='responder_multiple', style={'paddingBottom': "30px"}),
         ]
 
 ##Callback for when the user analyses data for single or multiple variables
@@ -212,6 +205,8 @@ def compare_single_variable(var1, var2, rows, columns):
     df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
     if not var2:
         return
+    if var1 == var2:
+        return html.Div("You selected {} as group variable and analysis variable".format(var1), className="table_warning")
     if not var1:
         return draw_pie_chart(df, var2) if check_categorical(df, var2) else draw_histogram(df, var2)
     if check_categorical(df, var2):
@@ -232,79 +227,83 @@ def compare_multiple_variables(var1, vars, rows, columns):
     df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
     if not vars:
         return
-    rows = []
+    if var1 in vars:
+        return html.Div("You selected {} as group variable and analysis variable".format(var1), className="table_warning")
     if not var1:
-        columns = ['Variable', 'Value']
-        for var in vars:
-            row = {"Variable": var, "Value": ""}
-            rows.append(row)
-            if check_categorical(df, var):
-                categories = df[var].unique()
-                for cat in categories:
-                    cnt = df[var].value_counts()[cat] if cat in df[var].unique() else 0
-                    percent = round(cnt/len(df[var])*100,2)
-                    row = {"Variable": cat, "Value": "{} ({}%)".format(cnt,percent)}
-                    rows.append(row)
-            elif is_numeric_dtype(df[var]):
-                row = {"Variable": "Mean (Std)", "Value": "{} ({})".format(round(df[var].mean(),2), round(df[var].std(),2))}
-                rows.append(row)
-                row = {"Variable": "Median (IQR)", "Value": "{} ({}-{})".format(round(df[var].median(),2), round(df[var].quantile(0.25),2), round(df[var].quantile(0.75),2))}
-                rows.append(row)
-
+        rows, columns = total_stats_table(df, vars)
     else:
-        group_names = list(map(str,df[var1].unique()))
-        columns = ['Variable'] + list(group_names) + ['p value']
-        for var in vars:
-            if check_categorical(df, var):
-                ##Calculate percent of each category
-                ##Calculate Chi2
-                var_rows = []
-                row_1 = {group_name: "" for group_name in group_names}
-                row_1['Variable'] = var
-                p = calculate_fisher(df, var1, var) if check_for_fisher(df, var1, var) else calculate_chi2(df, var1, var)
-                row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
-                var_rows.append(row_1)
-                categories = df[var].unique()
-                groups = get_groups(df, var1, var, dropna=False)
-                for cat in categories:
-                    row = {'Variable': " "+str(cat)}
-                    for i in range(len(groups)):
-                        cnt = groups[i].value_counts()[cat] if cat in groups[i].unique() else 0
-                        percent = round(cnt/len(groups[i])*100,2)
-                        row[group_names[i]] = "{} ({}%)".format(cnt, percent)
-                        row['p value'] = ""
-                    var_rows.append(row)
-                rows += var_rows
-            elif is_numeric_dtype(df[var]):
-                groups = get_groups(df, var1, var, dropna=True)
-                ##Calculate means + std and median + IQR
-                ##Calculate t-test, MW, ANOVA o Kruskel
-                var_rows = []
-                row_1 = {group_name: "" for group_name in group_names}
-                row_1['Variable'] = var
-                p = get_p_numerical(df, var1, var)
-                row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
-                row_mean = {group_names[i]: "{} ({})".format(round(groups[i].mean(),2), round(groups[i].std(),2)) for i in range(len(groups))}
-                row_mean['Variable'] = "Mean (Std)"
-                row_mean['p value'] = ""
-                row_median = {group_names[i]: "{} ({}-{})".format(round(groups[i].median(),2), groups[i].quantile(0.25), groups[i].quantile(0.75)) for i in range(len(groups))}
-                row_median['Variable'] = "Median (IQR)"
-                row_median['p value'] = ""
-                var_rows.append(row_1)
-                var_rows.append(row_mean)
-                var_rows.append(row_median)
-                rows += var_rows
+        rows, columns = compare_stats_table(df, var1, vars)
     df_table = pd.DataFrame(rows, columns=[c for c in columns])
     ##Create DataTable
     multiple_table = generate_table(df_table)
     session['multiple_table'] = df_table.to_json(orient="split")
     return [multiple_table, html.A("Save", className="button", href="/download_multiple/")]
 
-TABLE_STYLE = {
-    "backgroundColor": "White",
-    "borderRadius": "5px",
-    "color": "black",
-}
+def total_stats_table(df, vars):
+    rows = []
+    columns = ['Variable', 'Value']
+    for var in vars:
+        row = {"Variable": var, "Value": ""}
+        rows.append(row)
+        if check_categorical(df, var):
+            categories = df[var].unique()
+            for cat in categories:
+                cnt = df[var].value_counts()[cat] if cat in df[var].unique() else 0
+                percent = round(cnt/len(df[var])*100,2)
+                row = {"Variable": cat, "Value": "{} ({}%)".format(cnt,percent)}
+                rows.append(row)
+        elif is_numeric_dtype(df[var]):
+            row = {"Variable": "Mean (Std)", "Value": "{} ({})".format(round(df[var].mean(),2), round(df[var].std(),2))}
+            rows.append(row)
+            row = {"Variable": "Median (IQR)", "Value": "{} ({}-{})".format(round(df[var].median(),2), round(df[var].quantile(0.25),2), round(df[var].quantile(0.75),2))}
+            rows.append(row)
+    return rows,columns
+
+def compare_stats_table(df, group_variable, vars):
+    rows = []
+    group_names = list(map(str,df[group_variable].unique()))
+    columns = ['Variable'] + list(group_names) + ['p value']
+    for var in vars:
+        if check_categorical(df, var):
+            ##Calculate percent of each category
+            ##Calculate Chi2
+            var_rows = []
+            row_1 = {group_name: "" for group_name in group_names}
+            row_1['Variable'] = var
+            p = calculate_fisher(df, group_variable, var) if check_for_fisher(df, group_variable, var) else calculate_chi2(df, group_variable, var)
+            row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
+            var_rows.append(row_1)
+            categories = df[var].unique()
+            groups = get_groups(df, group_variable, var, dropna=False)
+            for cat in categories:
+                row = {'Variable': " "+str(cat)}
+                for i in range(len(groups)):
+                    cnt = groups[i].value_counts()[cat] if cat in groups[i].unique() else 0
+                    percent = round(cnt/len(groups[i])*100,2)
+                    row[group_names[i]] = "{} ({}%)".format(cnt, percent)
+                    row['p value'] = ""
+                var_rows.append(row)
+            rows += var_rows
+        elif is_numeric_dtype(df[var]):
+            groups = get_groups(df, group_variable, var, dropna=True)
+            ##Calculate means + std and median + IQR
+            ##Calculate t-test, MW, ANOVA o Kruskel
+            var_rows = []
+            row_1 = {group_name: "" for group_name in group_names}
+            row_1['Variable'] = var
+            p = get_p_numerical(df, group_variable, var)
+            row_1['p value'] = str(round(p,4)) if p>= 0.0001 else "<0.0001"
+            row_mean = {group_names[i]: "{} ({})".format(round(groups[i].mean(),2), round(groups[i].std(),2)) for i in range(len(groups))}
+            row_mean['Variable'] = "Mean (Std)"
+            row_mean['p value'] = ""
+            row_median = {group_names[i]: "{} ({}-{})".format(round(groups[i].median(),2), groups[i].quantile(0.25), groups[i].quantile(0.75)) for i in range(len(groups))}
+            row_median['Variable'] = "Median (IQR)"
+            row_median['p value'] = ""
+            var_rows.append(row_1)
+            var_rows.append(row_mean)
+            var_rows.append(row_median)
+            rows += var_rows
+    return rows,columns
 
 def generate_table(dataframe):
     return html.Div([html.Table(
@@ -336,15 +335,6 @@ def download_multiple():
         as_attachment=True)
 
 ###Statistical tests and graphics for single variable
-
-from scipy.stats import f_oneway, ttest_ind, mannwhitneyu, kruskal, chisquare, fisher_exact, chi2_contingency
-from scipy.stats.contingency import expected_freq
-from statsmodels.stats.diagnostic import kstest_normal
-
-
-GLOBAL_N_FOR_FISHER = 30
-GLOBAL_EXPECTED_FREQ = 5
-
 
 def get_p_numerical(df, group_variable, var):
     """Get dataframe, group variable and a numerical variable and return p using
@@ -547,4 +537,4 @@ def check_categorical(dataset, col):
     return False
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run_server(debug=True)
