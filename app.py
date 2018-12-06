@@ -145,7 +145,7 @@ def update_output(list_of_contents, list_of_names, list_of_dates):
 def analyze_table(rows, columns):
     df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
     dropdown1 = dcc.Dropdown(
-    options=[{'label': col, 'value': col} for col in df.columns if check_categorical(df, col)],
+    options=[{'label': col, 'value': col} for col in df.columns if (check_categorical(df, col) and not check_onlyvalue(df, col))],
     id='dropdown1',
     placeholder='Select a variable defining the groups',
     className="dropdown"
@@ -172,7 +172,7 @@ def analyze_table(rows, columns):
 def analyze_table_multiple(rows, columns):
     df = pd.DataFrame(rows, columns=[c['name'] for c in columns])
     dropdown1 = dcc.Dropdown(
-    options=[{'label': col, 'value': col} for col in df.columns if check_categorical(df, col)],
+    options=[{'label': col, 'value': col} for col in df.columns if (check_categorical(df, col) and not check_onlyvalue(df, col))],
     id='dropdown1_multiple',
     placeholder='Select a variable defining the groups',
     className="dropdown"
@@ -206,7 +206,7 @@ def compare_single_variable(var1, var2, rows, columns):
     if not var2:
         return
     if var1 == var2:
-        return html.Div("You selected {} as group variable and analysis variable".format(var1), className="table_warning")
+        return html.Div("You selected the same variable ({}) as both group variable and analysis variable".format(var1), className="table_warning")
     if not var1:
         return draw_pie_chart(df, var2) if check_categorical(df, var2) else draw_histogram(df, var2)
     if check_categorical(df, var2):
@@ -228,7 +228,7 @@ def compare_multiple_variables(var1, vars, rows, columns):
     if not vars:
         return
     if var1 in vars:
-        return html.Div("You selected {} as group variable and analysis variable".format(var1), className="table_warning")
+        return html.Div("You selected the same variable ({}) as both group variable and analysis variable".format(var1), className="table_warning")
     if not var1:
         rows, columns = total_stats_table(df, vars)
     else:
@@ -296,7 +296,7 @@ def compare_stats_table(df, group_variable, vars):
             row_mean = {group_names[i]: "{} ({})".format(round(groups[i].mean(),2), round(groups[i].std(),2)) for i in range(len(groups))}
             row_mean['Variable'] = "Mean (Std)"
             row_mean['p value'] = ""
-            row_median = {group_names[i]: "{} ({}-{})".format(round(groups[i].median(),2), groups[i].quantile(0.25), groups[i].quantile(0.75)) for i in range(len(groups))}
+            row_median = {group_names[i]: "{} ({}-{})".format(round(groups[i].median(),2), round(groups[i].quantile(0.25),2), round(groups[i].quantile(0.75),2)) for i in range(len(groups))}
             row_median['Variable'] = "Median (IQR)"
             row_median['p value'] = ""
             var_rows.append(row_1)
@@ -381,7 +381,7 @@ def print_chi2(df, group_variable, variable):
     chi2, p, dof, expected_freq = chi2_contingency(ct)
     ct.insert(0, '{}/{}'.format(variable, group_variable), pd.Series(df[variable].dropna().unique(), index=ct.index))
     ct_table = generate_table(ct)
-    return html.Div([ct_table, html.Div("The chi2 is {}, with a p of {}.".format(chi2, p))])
+    return html.Div([ct_table, html.Div("The chi2 is {}, with a p of {}.".format(round(chi2,2), round(p,2)), className="stats_box")])
 
 def print_fisher(df, group_variable, variable):
     if len(df[variable].dropna().unique())==1:
@@ -390,7 +390,7 @@ def print_fisher(df, group_variable, variable):
     oddsr, p = fisher_exact(ct)
     ct.insert(0, '{}/{}'.format(variable, group_variable), pd.Series(df[variable].dropna().unique(), index=ct.index))
     ct_table = generate_table(ct)
-    return html.Div([ct_table, html.Div("The Fisher Exact test for differences in proportions gives a p of {}.".format(p))])
+    return html.Div([ct_table, html.Div("The Fisher Exact test for differences in proportions gives a p of {}.".format(round(p,2)),  className="stats_box")])
 
 def print_numeric(df, group_variable, variable):
     if len(df[group_variable].unique()) > 2:
@@ -436,7 +436,7 @@ def print_anova(df, group_variable, variable):
     return html.Div("{} is normally distributed according to Kolmogorov-Smirnov test. The ANOVA (F statistic) for comparing means is {}, with a p of {}.".format(variable, F, p), className="stats_box")
 
 def print_mannwhitney(df, group_variable, variable):
-    groups = get_groups(df, group_variable, variable)
+    groups = get_groups(df, group_variable, variable) 
     u, p = mannwhitneyu(*groups)
     p = "<0.0001" if p<0.0001 else round(p, 4)
     return html.Div("{} is not normally distributed according to Kolmogorov-Smirnov test. The u (Mann-Whitney) statistic for comparing distributions is {}, with a p of {}.".format(variable, u, p), className="stats_box")    
@@ -506,7 +506,7 @@ def draw_boxplots(df, group_variable, variable):
     traces = [go.Box(y=df[df[group_variable]==i][variable], name=str(i), legendgroup=str(i)) for i in groups]
     return html.Div(create_graph(traces, "boxplot", xtitle=variable))#, className="six columns")
 
-def draw_histogram(df, variable):
+def draw_histogram(df, variable): 
     trace = go.Histogram(x=df[variable], name=variable)
     data = [trace]
     layout = go.Layout(title="Variable: ".format(variable))
@@ -520,7 +520,7 @@ def draw_histogram(df, variable):
         normality = "Variable {} follows a normal distribution according to Kolmogorov-Smirnov test, with a mean of {}, a standard deviation of {}, a median of {}, and interquartile range {}-{}".format(variable, mean, std, median, iq25, iq75)
     else:
         normality = "Variable {} does not follow a normal distribution according to Kolmogorov-Smirnov test, with a mean of {}, a standard deviation of {}, a median of {}, and interquartile range {}-{}".format(variable, mean, std, median, iq25, iq75)
-    return [html.Div(normality), dcc.Graph(id="hist", figure={'data': fig})]
+    return [html.Div(normality, className="stats_box"), dcc.Graph(id="hist", figure={'data': fig})]
 
 def draw_pie_chart(df, variable):
     trace = go.Pie(labels=df[variable].value_counts().keys().tolist(),values=df[variable].value_counts().tolist())
@@ -531,10 +531,15 @@ def draw_pie_chart(df, variable):
     fig = go.Figure(data=data, layout=layout)
     return dcc.Graph(id="pie", figure={'data': fig})
 
+def check_onlyvalue(dataset, col):
+    if dataset[col].value_counts().iloc[0]==len(dataset):
+        return True
+    return False
+
 def check_categorical(dataset, col):
-    if ((len(dataset[col].value_counts())<=2 or is_string_dtype(dataset[col])) and dataset[col].value_counts().iloc[0]!=len(dataset)):
+    if len(dataset[col].value_counts())<=2 or is_string_dtype(dataset[col]):
         return True
     return False
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
