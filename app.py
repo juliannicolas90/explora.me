@@ -30,7 +30,7 @@ server = app.server
 sslify = SSLify(server)
 app.config['suppress_callback_exceptions']=True
 app.title = "explora.me"
-app.server.secret_key = "asndiopasmdasdnasdosanjdp"
+app.server.secret_key = "INSERTYOURMAGICWORDHERE"
 
 app.index_string = '''
 <!DOCTYPE html>
